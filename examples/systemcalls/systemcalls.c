@@ -1,5 +1,11 @@
 #include "systemcalls.h"
-
+#include<syslog.h>
+#include<stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include<sys/wait.h>
+#include<stdio.h>
+#include <fcntl.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -16,8 +22,29 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+	openlog("syslog",LOG_PID | LOG_CONS ,LOG_USER);
+	
+	if(cmd == NULL){
+		syslog(LOG_ERR,"command is NULL\n");
+		return false;
+		}
+		
+	int ret = system(cmd);
+	
+	if(ret == -1){
+		syslog(LOG_ERR,"child process not created\n");
+		return false;
+		}
+		
+	if(WIFEXITED(ret)){
+		syslog(LOG_DEBUG,"Normal termination with exit status=%d\n",WEXITSTATUS(ret));
+		return true;
+		}
+	else
+		return false;
 
-    return true;
+	closelog();
+    	return true;
 }
 
 /**
@@ -36,32 +63,63 @@ bool do_system(const char *cmd)
 
 bool do_exec(int count, ...)
 {
-    va_list args;
-    va_start(args, count);
-    char * command[count+1];
-    int i;
-    for(i=0; i<count; i++)
-    {
-        command[i] = va_arg(args, char *);
-    }
-    command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+	va_list args;
+	va_start(args, count);
+	char * command[count+1];
+	int i;
+	for(i=0; i<count; i++)
+	    {
+		command[i] = va_arg(args, char *);
+	    }
+	command[count] = NULL;
+	    // this line is to avoid a compile warning before your implementation is complete
+	    // and may be removed
+	//command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
 
-    va_end(args);
-
-    return true;
+	openlog("syslog",LOG_PID | LOG_CONS ,LOG_USER);
+		
+ 	pid_t chld_pid = fork();
+ 	
+	if (chld_pid == -1){
+	    	perror("fork");
+	    	syslog(LOG_ERR,"fork failed");
+	    	va_end(args);
+	    	return false;
+	    	}
+	    	
+	else if(chld_pid == 0){
+	    	if(execv(command[0],command)==-1){
+			perror("execv");
+			syslog(LOG_ERR,"execv failed");
+			exit(1);
+			
+			}
+		}
+		
+	else {
+		int status;
+		if(waitpid(chld_pid,&status,0)==-1){
+			perror("waitpid");
+			syslog(LOG_ERR,"wait error\n");
+			va_end(args);
+			return false;
+			}
+	
+					
+		if(WIFEXITED(status)){
+			int exit_status = WEXITSTATUS(status);
+			if(exit_status == 0){
+				va_end(args);
+				return true;
+				}
+			}
+		}
+			
+			
+	 va_end(args);
+	 closelog();
+	 return false;
 }
 
 /**
@@ -71,29 +129,86 @@ bool do_exec(int count, ...)
 */
 bool do_exec_redirect(const char *outputfile, int count, ...)
 {
-    va_list args;
-    va_start(args, count);
-    char * command[count+1];
-    int i;
-    for(i=0; i<count; i++)
-    {
-        command[i] = va_arg(args, char *);
-    }
-    command[count] = NULL;
+	va_list args;
+	va_start(args, count);
+        char * command[count+1];
+        int i;
+        for(i=0; i<count; i++)
+        {
+        	command[i] = va_arg(args, char *);
+         }
+    	command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
 
+	openlog("syslog",LOG_PID | LOG_CONS ,LOG_USER);
+	//open file to redirect
+	
+	int fd = open(outputfile,O_RDWR |O_TRUNC | O_CREAT,0666);
+	
+	if (fd == -1){
+		perror("open");
+		syslog(LOG_ERR,"can't open file\n");
+		va_end(args);
+		return false;
+		}
+		
+	pid_t chld_pid = fork();
+	
+	if(chld_pid == -1){
+		perror("fork");
+	    	syslog(LOG_ERR,"fork failed\n");
+	    	close(fd);
+	    	va_end(args);
+	    	return false;
+	    	}
+	
+	else if(chld_pid == 0){
+	     	if(dup2(fd,STDOUT_FILENO)==-1){
+			perror("dup2");
+			syslog(LOG_ERR,"dup2 failed,failed to redirect\n");
+			close(fd);
+			va_end(args);
+			return false;
+			}
+		close(fd);
+		
+		if(execv(command[0],command)==-1){
+			perror("execv");
+			syslog(LOG_ERR,"execv failed\n");
+			exit(1);
+			}
+			
+		}
+	else{
+		int status;
+		if(waitpid(chld_pid,&status,0)==-1){
+			perror("waitpid");
+			syslog(LOG_ERR,"wait error\n");
+			close(fd);
+			va_end(args);
+			return false;
+			}
+		close(fd);
+					
+		if(WIFEXITED(status)){
+			int exit_status = WEXITSTATUS(status);
+			if(exit_status == 0){
+				va_end(args);
+				return true;
+				}
+			}
+		}
+				
+	     	
+		
+		
+	
+	
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
+    	va_end(args);
+    	closelog();
 
-    va_end(args);
-
-    return true;
+    	return false;
 }
