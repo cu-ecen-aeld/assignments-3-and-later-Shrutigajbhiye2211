@@ -17,6 +17,7 @@ jobs:
             run: ./unit-test.sh
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     full-test:
         container: cuaesd/aesd-autotest:assignment2
         runs-on: self-hosted
@@ -38,3 +39,5 @@ jobs:
 >>>>>>> assignments-base/assignment3-part-1
 =======
 >>>>>>> assignments-base/assignment3-part-2
+=======
+>>>>>>> assignments-base/assignment4
